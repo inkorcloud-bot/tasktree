@@ -1,4 +1,4 @@
-"""TaskTree CLI 主程序 - V3 版本"""
+"""TaskTree CLI 主程序 - V2 版本"""
 
 import typer
 from typing import Optional
@@ -14,17 +14,31 @@ from .exceptions import TaskNotFoundError, InvalidPathError, RootDeletionError
 
 
 app = typer.Typer(
-    help="TaskTree - 树形任务管理 CLI 工具 (V3)",
+    help="TaskTree - 树形任务管理 CLI 工具 (V2)",
     add_completion=False,
 )
 console = Console()
+
+
+def get_task_storage(task_name: str) -> Storage:
+    """
+    获取任务存储实例 - V3版本
+    
+    Args:
+        task_name: 任务名称（必填）
+    
+    Returns:
+        Storage: 存储实例
+    """
+    storage = Storage(task_name)
+    return storage
 
 
 def get_task_tree(storage: Storage) -> TaskTree:
     """获取任务树实例"""
     root_task = storage.load()
     if root_task is None:
-        task_name = storage._task_name
+        task_name = storage._task_name or "指定的任务"
         console.print(f"[red]错误: 任务树 '{task_name}' 未初始化[/red]")
         raise typer.Exit(code=1)
     return TaskTree(root_task)
@@ -40,7 +54,7 @@ def init(
     """初始化新的任务树"""
     try:
         storage = Storage(task_name)
-        root_task = storage.initialize(description)
+        root_task = storage.initialize(task_name, description)
         
         console.print(f"[green]✓ 成功初始化任务树[/green]")
         console.print(f"任务名称: {root_task.name}")
@@ -57,9 +71,7 @@ def init(
 def list_tasks():
     """列出所有任务"""
     try:
-        # 创建一个临时的 Storage 实例来访问存储目录
-        # 由于 Storage 现在需要 task_name，我们创建一个虚拟的
-        storage = Storage("temp_for_listing")
+        storage = Storage()
         tasks = storage.list_tasks()
         
         if not tasks:
@@ -71,8 +83,14 @@ def list_tasks():
         table.add_column("任务名称", style="cyan")
         table.add_column("文件名", style="dim")
         table.add_column("最后修改", style="yellow")
+        table.add_column("状态", style="green")
+        
+        active_task = get_active_task()
         
         for task_info in tasks:
+            # 标记当前活动任务
+            status = "✅" if task_info["name"] == active_task else ""
+            
             # 格式化时间
             modified_time = datetime.fromtimestamp(task_info["modified"])
             time_str = modified_time.strftime("%Y-%m-%d %H:%M")
@@ -80,12 +98,24 @@ def list_tasks():
             table.add_row(
                 task_info["name"],
                 task_info["filename"],
-                time_str
+                time_str,
+                status
             )
         
         console.print(table)
+        if active_task:
+            console.print(f"[cyan]当前活动任务: {active_task}[/cyan]")
+        else:
+            console.print(f"[yellow]当前没有活动任务[/yellow]")
+            console.print(f"[cyan]使用 'tasktree use <task-name>' 设置活动任务[/cyan]")
     except Exception as e:
         console.print(f"[red]错误: 列出任务失败: {e}[/red]")
+
+
+# V3 移除了 use 命令
+
+
+# V3 移除了 current 命令
 
 
 @app.command(help="在指定父节点下添加新任务")
@@ -108,7 +138,7 @@ def add(
 ):
     """添加新任务"""
     try:
-        storage = Storage(task_name)
+        storage = get_task_storage(task_name)
         task_tree = get_task_tree(storage)
         
         new_task = task_tree.add_task(parent_path, name, description, status, progress)
@@ -137,7 +167,7 @@ def list(
 ):
     """显示任务树结构"""
     try:
-        storage = Storage(task_name)
+        storage = get_task_storage(task_name)
         task_tree = get_task_tree(storage)
         lines = task_tree.get_tree_structure(detail)
         
@@ -163,7 +193,7 @@ def show(
 ):
     """显示任务详细信息"""
     try:
-        storage = Storage(task_name)
+        storage = get_task_storage(task_name)
         task_tree = get_task_tree(storage)
         task_info = task_tree.get_task_info(task_path)
         
@@ -203,8 +233,10 @@ def show(
 
 @app.command(help="编辑任务属性")
 def edit(
-    task_name: str = typer.Argument(..., help="任务名称"),
     task_path: str = typer.Argument(..., help="任务路径"),
+    task: Optional[str] = typer.Option(
+        None, "--task", "-t", help="指定任务名称（默认使用当前活动任务）"
+    ),
     name: Optional[str] = typer.Option(
         None, "--name", "-n", help="新名称"
     ),
@@ -228,11 +260,12 @@ def edit(
         return
     
     try:
-        storage = Storage(task_name)
+        storage = get_task_storage(task)
         task_tree = get_task_tree(storage)
         task_obj = task_tree.edit_task(task_path, name, description, status, progress)
         storage.save(task_tree.root)
         
+        task_name = task or get_active_task() or "当前任务"
         console.print(f"[green]✓ 成功更新任务: {task_obj.name}[/green]")
         console.print(f"任务: {task_name}")
         console.print(f"路径: {task_path}")
@@ -246,15 +279,17 @@ def edit(
 
 @app.command(help="删除任务及其所有子任务")
 def delete(
-    task_name: str = typer.Argument(..., help="任务名称"),
     task_path: str = typer.Argument(..., help="任务路径"),
+    task: Optional[str] = typer.Option(
+        None, "--task", "-t", help="指定任务名称（默认使用当前活动任务）"
+    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="直接删除，无需确认"
     )
 ):
     """删除任务及其所有子任务"""
     try:
-        storage = Storage(task_name)
+        storage = get_task_storage(task)
         task_tree = get_task_tree(storage)
         
         # 获取要删除的任务信息
@@ -271,6 +306,7 @@ def delete(
         task_tree.delete_task(task_path)
         storage.save(task_tree.root)
         
+        task_name = task or get_active_task() or "当前任务"
         console.print(f"[green]✓ 成功删除任务: {task_info['name']}[/green]")
         console.print(f"任务: {task_name}")
     except RootDeletionError as e:
@@ -284,12 +320,12 @@ def delete(
 @app.command(help="显示帮助信息")
 def help():
     """显示帮助信息"""
-    console.print("[bold cyan]TaskTree - 树形任务管理 CLI 工具 (V3)[/bold cyan]")
+    console.print("[bold cyan]TaskTree - 树形任务管理 CLI 工具 (V2)[/bold cyan]")
     console.print()
     console.print("主要改进:")
     console.print("  • 多任务支持 - 每个任务一个独立文件")
     console.print("  • 系统缓存目录存储 - 支持 TASKTREE_DATA_DIR 环境变量")
-    console.print("  • 简化接口 - 移除活动任务概念，所有命令显式指定任务")
+    console.print("  • 活动任务管理 - 可切换当前操作的任务")
     console.print()
     console.print("命令列表:")
     
@@ -298,21 +334,20 @@ def help():
     commands_table.add_column("说明", style="white")
     
     commands_table.add_row("init <task-name>", "初始化新的任务树")
-    commands_table.add_row("add <task-name> <parent-path> <name>", "在指定父节点下添加新任务")
-    commands_table.add_row("list <task-name> [--detail]", "显示任务树结构")
-    commands_table.add_row("show <task-name> <task-path>", "显示任务详细信息")
-    commands_table.add_row("edit <task-name> <task-path> [options]", "编辑任务属性")
-    commands_table.add_row("delete <task-name> <task-path> [--force]", "删除任务及其所有子任务")
+    commands_table.add_row("add <parent-path> <name>", "在指定父节点下添加新任务")
+    commands_table.add_row("list [--detail]", "显示任务树结构")
+    commands_table.add_row("show <task-path>", "显示任务详细信息")
+    commands_table.add_row("edit <task-path> [options]", "编辑任务属性")
+    commands_table.add_row("delete <task-path> [--force]", "删除任务及其所有子任务")
     commands_table.add_row("list-tasks", "列出所有任务")
+    commands_table.add_row("use <task-name>", "切换当前活动任务")
+    commands_table.add_row("current", "显示当前活动任务")
     commands_table.add_row("help", "显示帮助信息")
     
     console.print(commands_table)
     console.print()
-    console.print("V3 变化说明:")
-    console.print("  • 移除了 'use' 和 'current' 命令")
-    console.print("  • 移除了 '--task' 参数")
-    console.print("  • 所有命令第一个参数都是 <task-name>")
-    console.print("  • 不再有活动任务概念，避免多 agent 并发冲突")
+    console.print("公共选项:")
+    console.print("  --task, -t <task-name>   指定要操作的任务（默认使用当前活动任务）")
     console.print()
     console.print("使用 'tasktree <command> --help' 获取命令详细帮助")
 
@@ -323,9 +358,9 @@ def main(
         False, "--version", "-v", help="显示版本信息"
     )
 ):
-    """TaskTree - 树形任务管理 CLI 工具 (V3)"""
+    """TaskTree - 树形任务管理 CLI 工具 (V2)"""
     if version:
-        console.print("TaskTree v0.3.0")
+        console.print("TaskTree v0.2.0")
         raise typer.Exit()
 
 

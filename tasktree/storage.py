@@ -1,4 +1,4 @@
-"""任务数据存储管理 - V2 版本"""
+"""任务数据存储管理 - V3 版本"""
 
 import os
 import json
@@ -7,20 +7,25 @@ from typing import Optional
 import appdirs
 
 from .models import Task
-from .utils import get_task_filename, get_active_task, set_active_task
+from .utils import get_task_filename
 
 
 class Storage:
-    """任务数据存储类 - V2"""
+    """任务数据存储类 - V3"""
     
-    def __init__(self, task_name: Optional[str] = None):
+    def __init__(self, task_name: str):
         """
-        初始化存储类
+        初始化存储类 - V3版本
         
         Args:
-            task_name: 任务名称。如果为 None，则根据活动任务确定
+            task_name: 任务名称（必填）
+        
+        Raises:
+            ValueError: 如果 task_name 为 None
         """
-        self._task_name = task_name or get_active_task()
+        if task_name is None:
+            raise ValueError("task_name 不能为 None (V3 要求所有命令都指定任务名称)")
+        self._task_name = task_name
         self._data_dir = self._get_data_dir()
     
     def _get_data_dir(self) -> Path:
@@ -34,14 +39,9 @@ class Storage:
         cache_dir = appdirs.user_cache_dir("tasktree")
         return Path(cache_dir)
     
-    def _get_task_file_path(self, task_name: Optional[str] = None) -> Path:
+    def _get_task_file_path(self) -> Path:
         """获取任务文件的完整路径"""
-        if task_name is None:
-            if self._task_name is None:
-                raise ValueError("未指定任务名称且无活动任务")
-            task_name = self._task_name
-        
-        filename = get_task_filename(task_name)
+        filename = get_task_filename(self._task_name)
         return self._data_dir / filename
     
     @property
@@ -50,27 +50,13 @@ class Storage:
         return self._data_dir
     
     @property
-    def data_file(self) -> Optional[Path]:
-        """数据文件路径（如果任务已指定）"""
-        if self._task_name is None:
-            return None
-        return self._get_task_file_path(self._task_name)
+    def data_file(self) -> Path:
+        """数据文件路径"""
+        return self._get_task_file_path()
     
-    def load(self, task_name: Optional[str] = None) -> Optional[Task]:
-        """加载指定任务的数据"""
-        if task_name is None and self._task_name is None:
-            # 尝试向后兼容：检查当前目录的 tasktree.json
-            local_file = Path("tasktree.json")
-            if local_file.exists():
-                try:
-                    with open(local_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        return Task.from_dict(data)
-                except (json.JSONDecodeError, KeyError, ValueError):
-                    pass
-            return None
-        
-        task_file = self._get_task_file_path(task_name)
+    def load(self) -> Optional[Task]:
+        """加载当前任务的数据"""
+        task_file = self._get_task_file_path()
         if not task_file.exists():
             return None
             
@@ -81,15 +67,9 @@ class Storage:
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             raise ValueError(f"无法读取任务数据文件 {task_file}: {e}")
     
-    def save(self, task: Task, task_name: Optional[str] = None) -> None:
+    def save(self, task: Task) -> None:
         """保存任务数据"""
-        if task_name is None:
-            task_name = self._task_name
-        
-        if task_name is None:
-            raise ValueError("未指定任务名称")
-        
-        task_file = self._get_task_file_path(task_name)
+        task_file = self._get_task_file_path()
         
         # 确保目录存在
         task_file.parent.mkdir(parents=True, exist_ok=True)
@@ -97,51 +77,33 @@ class Storage:
         with open(task_file, 'w', encoding='utf-8') as f:
             json.dump(task.to_dict(), f, ensure_ascii=False, indent=2)
     
-    def exists(self, task_name: Optional[str] = None) -> bool:
+    def exists(self) -> bool:
         """检查任务文件是否存在"""
-        if task_name is None:
-            task_name = self._task_name
-        
-        if task_name is None:
-            # 检查向后兼容的本地文件
-            return Path("tasktree.json").exists()
-        
-        task_file = self._get_task_file_path(task_name)
+        task_file = self._get_task_file_path()
         return task_file.exists()
     
-    def delete(self, task_name: Optional[str] = None) -> bool:
+    def delete(self) -> bool:
         """删除任务文件"""
-        if task_name is None:
-            task_name = self._task_name
-        
-        if task_name is None:
-            # 删除向后兼容的本地文件
-            local_file = Path("tasktree.json")
-            if local_file.exists():
-                local_file.unlink()
-                return True
-            return False
-        
-        task_file = self._get_task_file_path(task_name)
+        task_file = self._get_task_file_path()
         if task_file.exists():
             task_file.unlink()
             return True
         return False
     
-    def initialize(self, task_name: str, description: str = "") -> Task:
+    def initialize(self, description: str = "") -> Task:
         """初始化新的任务树"""
-        if self.exists(task_name):
-            raise FileExistsError(f"任务 '{task_name}' 已存在")
+        if self.exists():
+            raise FileExistsError(f"任务 '{self._task_name}' 已存在")
         
         root_task = Task(
-            name=task_name,
+            name=self._task_name,
             description=description,
             status="todo",
             progress=None,
             children=[]
         )
         
-        self.save(root_task, task_name)
+        self.save(root_task)
         return root_task
     
     def list_tasks(self) -> list[dict]:
