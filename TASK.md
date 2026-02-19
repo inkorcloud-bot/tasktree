@@ -41,6 +41,15 @@
 
 ### 3. CLI 命令结构
 
+#### 帮助命令
+```bash
+tasktree --help
+tasktree <command> --help
+```
+- 显示所有可用命令
+- 显示指定命令的详细帮助信息
+- 使用 Typer 自带的帮助系统
+
 #### 初始化命令
 ```bash
 tasktree init [--name <root-name>]
