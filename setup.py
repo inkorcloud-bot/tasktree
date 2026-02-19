@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="tasktree",
-    version="0.3.0",
+    version="0.3.1",
     packages=find_packages(),
     install_requires=[
         "typer>=0.9.0",

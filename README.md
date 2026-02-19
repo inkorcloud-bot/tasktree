@@ -175,7 +175,7 @@ TASKTREE_DATA_DIR="/custom/path" tasktree init "我的任务"
 每个任务节点包含：
 - **name**: 任务名称（必填，字符串）
 - **description**: 任务描述（可选，字符串，默认空）
-- **status**: 任务状态（必填，枚举：`todo` | `in-progress` | `done`）
+- **status**: 任务状态（必填，枚举：`todo` | `in-progress` | `done` | `failed`）
 - **progress**: 完成进度（可选，整数 0-100，默认 null）
 - **children**: 子任务列表（数组）
 

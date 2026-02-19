@@ -150,6 +150,8 @@ def list(
                 console.print(f"[yellow]{line}[/yellow]")
             elif "[done]" in line:
                 console.print(f"[green]{line}[/green]")
+            elif "[failed]" in line:
+                console.print(f"[red]{line}[/red]")
             else:
                 console.print(line)
     except Exception as e:
@@ -181,8 +183,12 @@ def show(
             status_display = f"[grey]{status}[/grey]"
         elif status == "in-progress":
             status_display = f"[yellow]{status}[/yellow]"
-        else:
+        elif status == "done":
             status_display = f"[green]{status}[/green]"
+        elif status == "failed":
+            status_display = f"[red]{status}[/red]"
+        else:
+            status_display = status
         table.add_row("状态", status_display)
         
         progress = task_info["progress"]

@@ -10,6 +10,7 @@ class TaskStatus(str, Enum):
     TODO = "todo"
     IN_PROGRESS = "in-progress"
     DONE = "done"
+    FAILED = "failed"
 
 
 class Task(BaseModel):
